@@ -3,8 +3,9 @@ const WebSocketServer = require('ws');
 const uuid = require('uuid')
 const users = {}
 const rooms = {}
+const port = process.env.PORT ? process.env.PORT : 8080
 // Creating a new websocket server
-const wss = new WebSocketServer.Server({ port: 8080 })
+const wss = new WebSocketServer.Server({ port: port })
  
 // Creating connection using websocket
 wss.on("connection", (ws,req) => {
