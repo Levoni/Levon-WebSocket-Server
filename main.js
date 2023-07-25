@@ -26,6 +26,8 @@ wss.on("connection", (ws,req) => {
                 let room = rooms[users[uuid4.toString()].roomId]
                 if(room && room.type=='ttt') {
                     handleTicTacToeGame(uuid4,room,data)
+                } else if (room && room.type=='stratego') {
+                    handleStrategoGame(uuid4,room,data)
                 }
             }
         }
@@ -66,7 +68,11 @@ const handleJoin = (ws, uuid4, data) => {
         }
         rooms[data.pin].players = [...rooms[data.pin].players, uuid4 ]
     } else {
-        rooms[data.pin] = createTicTacToeGame(data.pin, data.type)
+        if(data.type == 'ttt') {
+            rooms[data.pin] = createTicTacToeGame(data.pin, data.type)
+        } else if(data.type == 'stratego') {
+            rooms[data.pin] = createStratigoGame(data.pin, data.type)
+        }
         rooms[data.pin].players = [uuid4.toString()]
     }
     ws.send(`{"action":"connection","type":"${data.type}","pin":"${data.pin}","player":"${rooms[data.pin].players.length}"}`)
@@ -84,7 +90,7 @@ const handleTicTacToeGame = (uuid4, room, data) => {
             users[element.toString()].connection.send(`{"action":"start","startPlayer":"${room.currentPlayer}"}`)
         });
         room.players.forEach(element => {
-            users[element.toString()].connection.send(`{"action":"message","message":"The game Has started, player ${users[room.players[room.currentPlayer - 1]].name} starts"}`)
+            users[element.toString()].connection.send(`{"action":"message","message":"The game has started, player ${users[room.players[room.currentPlayer - 1]].name} starts"}`)
         });
     } else if (data.action == 'place' && room.state == 'started') {
         if(room.board[data.location] == undefined) {
@@ -105,6 +111,41 @@ const handleTicTacToeGame = (uuid4, room, data) => {
     } else if (data.action == 'message') {
         room.players.forEach(element => {
             users[element.toString()].connection.send(`{"action":"message","message":"${users[uuid4.toString()].name}: ${data.message}"}`)
+        });
+    }
+}
+
+const handleStrategoGame = (uuid4,room,data) => {
+    if(data.action == 'start') {
+        room.state = 'placing'
+        room.board=createStratigoBasicBoard()
+        room.graveyard=createGraveyard(users[room.players[0]],users[room.players[1]])
+        room.players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"start"}`)
+        });
+        room.players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"message","message":"The game Has started, please place your pieces.`)
+        });
+    } else if(data.action == 'place') {
+        let placeIndex = room.graveyard.findIndex((element) => {return element.owner.uuid4 == uuid4 && element.power == data.power})
+        let piece = room.graveyard[placeIndex]
+        room.graveyard = room.graveyard.splice(placeIndex,1)
+        room.board[data.x][data.y].piece = piece
+        users[uuid4.toString()].connection.send(`{"action":"piecePlaced","x":"${data.x}","y":"${data.y}","piece":"${data.power}"}`)
+        let anyPiceIndex = room.graveyard.findIndex((element)=>{return element.owner == uuid4})
+        if(anyPiceIndex == -1) {
+            users[uuid4.toString()].connection.send(`{"action":"lastPiecePlaced"}`)
+        }
+        if(room.graveyard.length == 0) {
+            room.players.forEach(element => {
+                users[element.toString()].connection.send(`{"action":"allPiecesPlayed"}`)
+            });
+        }
+    } else if(data.action == 'move') {
+
+    } else if(data.action == 'end') {
+        room.players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"end"}`)
         });
     }
 }
@@ -151,5 +192,76 @@ const createTicTacToeGame = (gamePin, gameType)=> {
         state:'',
         currentPlayer:0,
         messages:[]
+    }
+}
+
+const createStratigoGame = (gamePin, gameType) => {
+    return {
+        pin: gamePin,
+        type: gameType,
+        players: [],
+        board:null,
+        graveyard:  null,
+        state:'',
+        currentPlayer:0,
+        messages:[],
+        lastMove:''
+    }
+}
+
+const createStratigoBasicBoard = () => {
+    let board = []
+    for(let i = 0; i < 10; i++) {
+        let row = []
+        for(let y = 0; y < 10; y++) {
+            if((i == 4 || i == 5) && (y == 2 || y ==3 || y == 6 || y == 7)) {
+                row.push(createStratigoBasicTile(1))
+            } else {
+                row.push(createStratigoBasicTile(0))
+            }
+        }
+        board.push(row)
+    }
+}
+// 1=land,2=water
+const createStratigoBasicTile = (type) => {
+    return {type:type,piece:null}
+}
+
+const createGraveyard = (player1,player2) => {
+    let graveyard = []
+    for(let i = 0;i < 1; i++) {
+        graveyard.push({owner:player1,power:10})
+        graveyard.push({owner:player2,power:10})
+        graveyard.push({owner:player1,power:9})
+        graveyard.push({owner:player2,power:9})
+    }
+    for(let i = 0;i < 2; i++) {
+        graveyard.push({owner:player1,power:8})
+        graveyard.push({owner:player2,power:8})
+    }
+    for(let i = 0;i < 3; i++) {
+        graveyard.push({owner:player1,power:7})
+        graveyard.push({owner:player2,power:7})
+    }
+    for(let i = 0;i < 4; i++) {
+        graveyard.push({owner:player1,power:6})
+        graveyard.push({owner:player2,power:6})
+        graveyard.push({owner:player1,power:5})
+        graveyard.push({owner:player2,power:5})
+        graveyard.push({owner:player1,power:4})
+        graveyard.push({owner:player2,power:4})
+    }
+    for(let i = 0;i < 5; i++) {
+        graveyard.push({owner:player1,power:3})
+        graveyard.push({owner:player2,power:3})
+    }
+    for(let i = 0;i < 8; i++) {
+        graveyard.push({owner:player1,power:2})
+        graveyard.push({owner:player2,power:2})
+    }
+    for(let i = 0;i < 1; i++) {
+        graveyard.push({owner:player1,power:1})
+        graveyard.push({owner:player2,power:1})
     }
 }
