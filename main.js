@@ -124,14 +124,15 @@ const handleStrategoGame = (uuid4,room,data) => {
             users[element.toString()].connection.send(`{"action":"start"}`)
         });
         room.players.forEach(element => {
-            users[element.toString()].connection.send(`{"action":"message","message":"The game Has started, please place your pieces.`)
+            users[element.toString()].connection.send(`{"action":"message","message":"The game Has started, please place your pieces."}`)
         });
     } else if(data.action == 'place') {
-        let placeIndex = room.graveyard.findIndex((element) => {return element.owner.uuid4 == uuid4 && element.power == data.power})
-        let piece = room.graveyard[placeIndex]
-        room.graveyard = room.graveyard.splice(placeIndex,1)
+        let placeIndex = room.graveyard.findIndex((element) => {return element.owner == data.player && element.power == data.power})
+        let piece = room.graveyard.splice(placeIndex,1)[0]
         room.board[data.x][data.y].piece = piece
-        users[uuid4.toString()].connection.send(`{"action":"piecePlaced","x":"${data.x}","y":"${data.y}","piece":"${data.power}"}`)
+        room.players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"piecePlaced","x":"${data.x}","y":"${data.y}","power":"${data.power}","player":"${data.player}"}`)
+        });
         let anyPiceIndex = room.graveyard.findIndex((element)=>{return element.owner == uuid4})
         if(anyPiceIndex == -1) {
             users[uuid4.toString()].connection.send(`{"action":"lastPiecePlaced"}`)
@@ -222,6 +223,7 @@ const createStratigoBasicBoard = () => {
         }
         board.push(row)
     }
+    return board
 }
 // 1=land,2=water
 const createStratigoBasicTile = (type) => {
@@ -231,37 +233,44 @@ const createStratigoBasicTile = (type) => {
 const createGraveyard = (player1,player2) => {
     let graveyard = []
     for(let i = 0;i < 1; i++) {
-        graveyard.push({owner:player1,power:10})
-        graveyard.push({owner:player2,power:10})
-        graveyard.push({owner:player1,power:9})
-        graveyard.push({owner:player2,power:9})
+        graveyard.push({owner:1,power:12})
+        graveyard.push({owner:2,power:12})
+        graveyard.push({owner:1,power:10})
+        graveyard.push({owner:2,power:10})
+        graveyard.push({owner:1,power:9})
+        graveyard.push({owner:2,power:9})
+    }
+    for(let i = 0;i < 6; i++) {
+        graveyard.push({owner:1,power:11})
+        graveyard.push({owner:2,power:11})
     }
     for(let i = 0;i < 2; i++) {
-        graveyard.push({owner:player1,power:8})
-        graveyard.push({owner:player2,power:8})
+        graveyard.push({owner:1,power:8})
+        graveyard.push({owner:2,power:8})
     }
     for(let i = 0;i < 3; i++) {
-        graveyard.push({owner:player1,power:7})
-        graveyard.push({owner:player2,power:7})
+        graveyard.push({owner:1,power:7})
+        graveyard.push({owner:2,power:7})
     }
     for(let i = 0;i < 4; i++) {
-        graveyard.push({owner:player1,power:6})
-        graveyard.push({owner:player2,power:6})
-        graveyard.push({owner:player1,power:5})
-        graveyard.push({owner:player2,power:5})
-        graveyard.push({owner:player1,power:4})
-        graveyard.push({owner:player2,power:4})
+        graveyard.push({owner:1,power:6})
+        graveyard.push({owner:2,power:6})
+        graveyard.push({owner:1,power:5})
+        graveyard.push({owner:2,power:5})
+        graveyard.push({owner:1,power:4})
+        graveyard.push({owner:2,power:4})
     }
     for(let i = 0;i < 5; i++) {
-        graveyard.push({owner:player1,power:3})
-        graveyard.push({owner:player2,power:3})
+        graveyard.push({owner:1,power:3})
+        graveyard.push({owner:2,power:3})
     }
     for(let i = 0;i < 8; i++) {
-        graveyard.push({owner:player1,power:2})
-        graveyard.push({owner:player2,power:2})
+        graveyard.push({owner:1,power:2})
+        graveyard.push({owner:2,power:2})
     }
     for(let i = 0;i < 1; i++) {
-        graveyard.push({owner:player1,power:1})
-        graveyard.push({owner:player2,power:1})
+        graveyard.push({owner:1,power:1})
+        graveyard.push({owner:2,power:1})
     }
+    return graveyard
 }
