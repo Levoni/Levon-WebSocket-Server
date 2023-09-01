@@ -112,6 +112,8 @@ const handleTicTacToeGame = (uuid4, room, data) => {
         room.players.forEach(element => {
             users[element.toString()].connection.send(`{"action":"message","message":"${users[uuid4.toString()].name}: ${data.message}"}`)
         });
+    } else  if(data.action == 'sync') {
+        users[uuid4].connection.send(`{"action":"sync","room":${JSON.stringify(room)}}`)
     }
 }
 
@@ -119,7 +121,7 @@ const handleStrategoGame = (uuid4,room,data) => {
     if(data.action == 'start') {
         room.state = 'placing'
         room.board=createStratigoBasicBoard()
-        room.graveyard=createGraveyard(users[room.players[0]],users[room.players[1]])
+        room.graveyard=createGraveyard()
         room.players.forEach(element => {
             users[element.toString()].connection.send(`{"action":"start"}`)
         });
@@ -133,7 +135,7 @@ const handleStrategoGame = (uuid4,room,data) => {
         room.players.forEach(element => {
             users[element.toString()].connection.send(`{"action":"piecePlaced","x":"${data.x}","y":"${data.y}","power":"${data.power}","player":"${data.player}"}`)
         });
-        let anyPiceIndex = room.graveyard.findIndex((element)=>{return element.owner == uuid4})
+        let anyPiceIndex = room.graveyard.findIndex((element)=>{return element.owner == data.player})
         if(anyPiceIndex == -1) {
             users[uuid4.toString()].connection.send(`{"action":"lastPiecePlaced"}`)
         }
@@ -142,12 +144,68 @@ const handleStrategoGame = (uuid4,room,data) => {
                 users[element.toString()].connection.send(`{"action":"allPiecesPlayed"}`)
             });
         }
-    } else if(data.action == 'move') {
-
+    } else if(data.action == 'remove') {
+        let piece = room.board[data.x][data.y].piece
+        room.graveyard.push(piece)
+        room.board[data.x][data.y].piece = null
+        room.players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"pieceRemoved","x":"${data.x}","y":"${data.y}"}`)
+        });
+    } else if(data.action == 'removeAndPlace') {
+        let piece = room.board[data.x][data.y].piece
+        room.graveyard.push(piece)
+        room.board[data.x][data.y].piece = null
+        let placeIndex = room.graveyard.findIndex((element) => {return element.owner == data.player && element.power == data.power})
+        piece = room.graveyard.splice(placeIndex,1)[0]
+        room.board[data.x][data.y].piece = piece
+        room.players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"removeAndPlace","player":"${data.player}","power":"${data.power}","x":"${data.x}","y":"${data.y}"}`)
+        });
+    } else if(data.action == 'movePiece') {
+        let piece = room.board[data.xStart][data.yStart].piece
+        let endPiece = room.board[data.x][data.y].piece
+        if(endPiece == null) {
+            room.board[data.x][data.y].piece = piece
+            room.board[data.xStart][data.yStart].piece = null
+            room.players.forEach(element => {
+                users[element.toString()].connection.send(`{"action":"movePiece","xStart":"${data.xStart}","yStart":"${data.yStart}","x":"${data.x}","y":"${data.y}"}`)
+            });
+        } else {
+            if(piece.power == 1 && endPiece.power == 10) {
+                room.board[data.xStart][data.yStart].piece = null
+                room.board[data.x][data.y].piece = piece
+            } else if (piece.power == 3 && endPiece.power == 11) {
+                room.board[data.xStart][data.yStart].piece = null
+                room.board[data.x][data.y].piece = piece
+            } else if (endPiece.power == 12) {
+                room.board[data.xStart][data.yStart].piece = null
+                room.board[data.x][data.y].piece = piece
+            } else if(piece.power > endPiece.power) {
+                room.board[data.xStart][data.yStart].piece = null
+                room.board[data.x][data.y].piece = piece
+            } else if(piece.power < endPiece.power) {
+                room.board[data.xStart][data.yStart].piece = null
+            } else {
+                room.board[data.xStart][data.yStart].piece = null
+                room.board[data.x][data.y].piece = null
+            }
+            room.players.forEach(element => {
+                users[element.toString()].connection.send(`{"action":"battle","xStart":"${data.xStart}","yStart":"${data.yStart}","x":"${data.x}","y":"${data.y}"}`)
+            });
+            if(endPiece.power == 12) {
+                room.state = 'stopped'
+            }
+        }
     } else if(data.action == 'end') {
         room.players.forEach(element => {
             users[element.toString()].connection.send(`{"action":"end"}`)
         });
+    } else if(data.action == 'message') {
+        room.players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"message","message":"${users[uuid4.toString()].name}: ${data.message}"}`)
+        });
+    } else  if(data.action == 'sync') {
+        users[uuid4].connection.send(`{"action":"sync","room":${JSON.stringify(room)}}`)
     }
 }
 
@@ -230,7 +288,7 @@ const createStratigoBasicTile = (type) => {
     return {type:type,piece:null}
 }
 
-const createGraveyard = (player1,player2) => {
+const createGraveyard = () => {
     let graveyard = []
     for(let i = 0;i < 1; i++) {
         graveyard.push({owner:1,power:12})
