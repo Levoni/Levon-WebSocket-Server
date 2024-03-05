@@ -28,6 +28,8 @@ wss.on("connection", (ws,req) => {
                     handleTicTacToeGame(uuid4,room,data)
                 } else if (room && room.type=='stratego') {
                     handleStrategoGame(uuid4,room,data)
+                } else if (room && room.type=='buzzer') {
+                    handleBuzzerGame(uuid4.toString(),room,data)
                 }
             }
         }
@@ -63,8 +65,9 @@ console.log("The WebSocket server is running on port 8080");
 const handleJoin = (ws, uuid4, data) => {
     users[uuid4.toString()] = {...users[uuid4.toString()], roomId:data.pin, name: data.name}
     if(rooms[data.pin]) {
-        if(rooms[data.pin].players.length == 2) {
+        if(rooms[data.pin].players.length == 2 && rooms[data.pin].type != 'buzzer') {
             ws.send(`{"action":"message","message":"Too many people already in that lobby"}`)
+            return
         }
         rooms[data.pin].players = [...rooms[data.pin].players, uuid4 ]
     } else {
@@ -72,6 +75,8 @@ const handleJoin = (ws, uuid4, data) => {
             rooms[data.pin] = createTicTacToeGame(data.pin, data.type)
         } else if(data.type == 'stratego') {
             rooms[data.pin] = createStratigoGame(data.pin, data.type)
+        } else if (data.type == 'buzzer') {
+            rooms[data.pin] = createBuzzerGame(data.pin, data.type, uuid4)
         }
         rooms[data.pin].players = [uuid4.toString()]
     }
@@ -204,7 +209,30 @@ const handleStrategoGame = (uuid4,room,data) => {
         room.players.forEach(element => {
             users[element.toString()].connection.send(`{"action":"message","message":"${users[uuid4.toString()].name}: ${data.message}"}`)
         });
-    } else  if(data.action == 'sync') {
+    } else if(data.action == 'sync') {
+        users[uuid4].connection.send(`{"action":"sync","room":${JSON.stringify(room)}}`)
+    }
+}
+
+const handleBuzzerGame = (uuid4,room,data) => {
+    if (data.action == 'start') {
+        room.state = 'started'
+        room.players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"start"}`)
+        });
+    } else if(data.action == 'buzz') {
+        room.players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"buzz","player":"${users[uuid4.toString()].name}"}`)
+        });
+    } else if (data.action == 'resetBuzz') {
+        room.players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"resetBuzz"}`)
+        });
+    } else if(data.action == 'message') {
+        room.players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"message","message":"${users[uuid4.toString()].name}: ${data.message}"}`)
+        });
+    } else if (data.action == 'sync') {
         users[uuid4].connection.send(`{"action":"sync","room":${JSON.stringify(room)}}`)
     }
 }
@@ -265,6 +293,17 @@ const createStratigoGame = (gamePin, gameType) => {
         currentPlayer:0,
         messages:[],
         lastMove:''
+    }
+}
+
+const createBuzzerGame = (gamePin, gameType, hostPlayer) => {
+    return {
+        pin: gamePin,
+        type: gameType,
+        state: '',
+        host: hostPlayer,
+        players: [],
+        messages: [],
     }
 }
 
