@@ -6,11 +6,23 @@ const rooms = {}
 const port = process.env.PORT ? process.env.PORT : 8080
 // Creating a new websocket server
 const wss = new WebSocketServer.Server({ port: port })
+
+class User {
+    constructor(uuid4,connection) {
+        this.userId = uuid4
+        this.connection = connection
+    }
+    SetPlayerData(roomId, name, playerNum){
+        this.roomId = roomId
+        this.name = name
+        this.playerNum = playerNum
+    }
+}
  
 // Creating connection using websocket
 wss.on("connection", (ws,req) => {
     let uuid4 = uuid.v4()
-    users[uuid4.toString()] = {userId:uuid4, connection: ws}
+    users[uuid4.toString()] = new User(uuid4, ws)
     // sending message to client
     ws.send('{"action":"message","message":"Welcome, you are connected!"}');
     console.log("the client "+ uuid4 +"has connected");
@@ -40,6 +52,8 @@ wss.on("connection", (ws,req) => {
         if(users[uuid4.toString()].roomId) {
             let room = rooms[users[uuid4.toString()].roomId]
             let user = users[uuid4]
+            //{...users[uuid4.toString()], roomId:data.pin, name: data.name}
+            room.disconnects= [...room.disconnects, user]
             room.players = room.players.filter(element => {
                 return element.toString() != uuid4.toString()
             })
@@ -63,27 +77,49 @@ wss.on("connection", (ws,req) => {
 console.log("The WebSocket server is running on port 8080");
 
 const handleJoin = (ws, uuid4, data) => {
-    users[uuid4.toString()] = {...users[uuid4.toString()], roomId:data.pin, name: data.name}
+    users[uuid4.toString()].SetPlayerData(data.pin,data.name,-1)
+    let reconnect = false
     if(rooms[data.pin]) {
         if(rooms[data.pin].players.length == 2 && rooms[data.pin].type != 'buzzer') {
             ws.send(`{"action":"message","message":"Too many people already in that lobby"}`)
             return
         }
-        rooms[data.pin].players = [...rooms[data.pin].players, uuid4 ]
+        let disconnectIndex = rooms[data.pin].disconnects.findIndex((element) => element.name == data.name)
+        if(disconnectIndex >= 0) {
+            let player = rooms[data.pin].disconnects[disconnectIndex]
+            users[uuid4.toString()].SetPlayerData(player.roomId,player.name,player.playerNum)
+            rooms[data.pin].players = [...rooms[data.pin].players, uuid4.toString()]
+            rooms[data.pin].disconnects = rooms[data.pin].disconnects.splice(disconnectIndex, disconnectIndex);
+            reconnect = true
+        } else {
+            rooms[data.pin].players = [...rooms[data.pin].players, uuid4 ]
+            users[uuid4.toString()].playerNum = rooms[data.pin].players.length
+        }
     } else {
         if(data.type == 'ttt') {
-            rooms[data.pin] = createTicTacToeGame(data.pin, data.type)
+            rooms[data.pin] = createTicTacToeGame(data.pin, data.type, users[uuid4.toString()].name)
         } else if(data.type == 'stratego') {
-            rooms[data.pin] = createStratigoGame(data.pin, data.type)
+            rooms[data.pin] = createStratigoGame(data.pin, data.type, users[uuid4.toString()].name)
         } else if (data.type == 'buzzer') {
-            rooms[data.pin] = createBuzzerGame(data.pin, data.type, uuid4)
+            rooms[data.pin] = createBuzzerGame(data.pin, data.type, users[uuid4.toString()].name)
         }
         rooms[data.pin].players = [uuid4.toString()]
+        users[uuid4.toString()].playerNum = rooms[data.pin].players.length
     }
-    ws.send(`{"action":"connection","type":"${data.type}","pin":"${data.pin}","player":"${rooms[data.pin].players.length}"}`)
-    rooms[data.pin].players.forEach(element => {
-        users[element.toString()].connection.send(`{"action":"message","message":"Player joined: ${rooms[data.pin].players.length} players are in the lobby"}`)
-    });
+
+    if(reconnect) {
+        ws.send(`{"action":"connection","type":"${data.type}","pin":"${data.pin}","player":"${users[uuid4.toString()].playerNum}"}`)
+        ws.send(`{"action":"message","message":"Reconnected, syncing game"}`)
+        ws.send(`{"action":"sync","room":${JSON.stringify(rooms[data.pin])}}`)
+        rooms[data.pin].players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"message","message":"Player ${users[uuid4.toString()].name} reconnected: ${rooms[data.pin].players.length} players are in the lobby"}`)
+        });
+    } else {
+        ws.send(`{"action":"connection","type":"${data.type}","pin":"${data.pin}","player":"${users[uuid4.toString()].playerNum}"}`)
+        rooms[data.pin].players.forEach(element => {
+            users[element.toString()].connection.send(`{"action":"message","message":"Player ${users[uuid4.toString()].name} joined: ${rooms[data.pin].players.length} players are in the lobby"}`)
+        });
+    }
 }
 
 const handleTicTacToeGame = (uuid4, room, data) => {
@@ -224,11 +260,12 @@ const handleBuzzerGame = (uuid4,room,data) => {
         room.players.forEach(element => {
             users[element.toString()].connection.send(`{"action":"buzz","player":"${users[uuid4.toString()].name}"}`)
         });
-    } else if (data.action == 'resetBuzz') {
+    } else if (data.action == 'resetBuzz' && users[uuid4.toString()].name == room.host) {
         room.players.forEach(element => {
             users[element.toString()].connection.send(`{"action":"resetBuzz"}`)
         });
     } else if(data.action == 'message') {
+        room.messages.push(`${users[uuid4.toString()].name}: ${data.message}`)
         room.players.forEach(element => {
             users[element.toString()].connection.send(`{"action":"message","message":"${users[uuid4.toString()].name}: ${data.message}"}`)
         });
@@ -270,19 +307,21 @@ const checkTicTacToeWin = (board) => {
     return 0
 }
 
-const createTicTacToeGame = (gamePin, gameType)=> {
+const createTicTacToeGame = (gamePin, gameType,hostPlayer)=> {
     return {
         pin: gamePin,
         type: gameType,
         players:[],
         board:{},
         state:'',
+        host: hostPlayer,
         currentPlayer:0,
-        messages:[]
+        messages:[],
+        disconnects:[],
     }
 }
 
-const createStratigoGame = (gamePin, gameType) => {
+const createStratigoGame = (gamePin, gameType,hostPlayer) => {
     return {
         pin: gamePin,
         type: gameType,
@@ -290,9 +329,11 @@ const createStratigoGame = (gamePin, gameType) => {
         board:null,
         graveyard:  null,
         state:'',
+        host: hostPlayer,
         currentPlayer:0,
         messages:[],
-        lastMove:''
+        lastMove:'',
+        disconnects:[],
     }
 }
 
@@ -304,6 +345,7 @@ const createBuzzerGame = (gamePin, gameType, hostPlayer) => {
         host: hostPlayer,
         players: [],
         messages: [],
+        disconnects:[],
     }
 }
 
